@@ -12,13 +12,14 @@ class ReplyAgent {
         this.model = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
         this.maxTokens = parseInt(process.env.OPENAI_MAX_TOKENS) || 100;
         this.temperature = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7;
+        this.aiReplyCharacterLimit = parseInt(process.env.AI_REPLY_CHARACTER_LIMIT) || 280;
 
         // Default personality and instructions
         this.defaultInstructions = process.env.REPLY_INSTRUCTIONS || `
 You are a helpful and engaging Twitter user. Generate a thoughtful, relevant reply to the given tweet.
 
 Guidelines:
-- Keep responses under 280 characters
+- Keep responses under ${this.aiReplyCharacterLimit} characters
 - Be conversational and friendly
 - Add value to the conversation
 - Avoid controversial topics
@@ -125,8 +126,8 @@ Generate a thoughtful, engaging reply that adds value to the conversation.
         let cleaned = reply.replace(/^["']|["']$/g, '');
 
         // Ensure it's under Twitter's character limit
-        if (cleaned.length > 280) {
-            cleaned = cleaned.substring(0, 277) + '...';
+        if (cleaned.length > this.aiReplyCharacterLimit) {
+            cleaned = cleaned.substring(0, this.aiReplyCharacterLimit - 3) + '...';
         }
 
         return cleaned;
@@ -143,7 +144,7 @@ Generate a thoughtful, engaging reply that adds value to the conversation.
         }
 
         // Check length
-        if (reply.length === 0 || reply.length > 280) {
+        if (reply.length === 0 || reply.length > this.aiReplyCharacterLimit) {
             return false;
         }
 
