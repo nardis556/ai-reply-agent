@@ -1,0 +1,6 @@
+node_modules
+browser-profile
+.env
+tweets.db
+cron.log
+cron-error.log

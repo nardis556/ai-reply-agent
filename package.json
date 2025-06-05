@@ -1,0 +1,23 @@
+{
+  "name": "ai-reply-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@playwright/test": "^1.49.1",
+    "dotenv": "^16.5.0",
+    "openai": "^5.1.0",
+    "playwright": "^1.49.1",
+    "puppeteer": "^24.10.0",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.29"
+  }
+}
