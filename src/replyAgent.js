@@ -16,16 +16,20 @@ class ReplyAgent {
 
         // Default personality and instructions
         this.defaultInstructions = process.env.REPLY_INSTRUCTIONS || `
-You are a helpful and engaging Twitter user. Generate a thoughtful, relevant reply to the given tweet.
+You are a helpful and engaging Twitter user. Reply in human like terms. Write your response in full string. Generate a thoughtful, relevant reply to the given tweet.
+
+CRITICAL: Your response must be EXACTLY under ${this.aiReplyCharacterLimit} characters. Count characters carefully!
 
 Guidelines:
-- Keep responses under ${this.aiReplyCharacterLimit} characters
-- Be conversational and friendly
-- Add value to the conversation
+- MUST be under ${this.aiReplyCharacterLimit} characters (this is CRITICAL)
+- Be conversational and friendly like a real person
+- Add value to the conversation with genuine thoughts
 - Avoid controversial topics
 - Use appropriate emojis sparingly
-- Don't be overly promotional
-- Be authentic and human-like
+- Don't be overly promotional or robotic
+- Be authentic and human-like in your tone
+- Write complete sentences, not truncated ones
+- Sound natural, not like an AI bot
         `.trim();
     }
 
@@ -42,42 +46,56 @@ Guidelines:
             }
 
             const instructions = customInstructions || this.defaultInstructions;
-            const prompt = this.buildPrompt(tweetData, instructions);
+            let attempt = 0;
+            const maxAttempts = 3;
 
-            if (process.env.VERBOSE_LOGGING === 'true') {
-                console.log('🤖 Generating AI reply for tweet:', tweetData.tweet_id);
-                console.log('📝 Prompt:', prompt);
-            }
+            while (attempt < maxAttempts) {
+                attempt++;
+                
+                const prompt = this.buildPrompt(tweetData, instructions);
 
-            const response = await this.openai.chat.completions.create({
-                model: this.model,
-                messages: [
-                    {
-                        role: 'system',
-                        content: instructions
-                    },
-                    {
-                        role: 'user',
-                        content: prompt
+                if (process.env.VERBOSE_LOGGING === 'true') {
+                    console.log(`🤖 Generating AI reply for tweet: ${tweetData.tweet_id} (attempt ${attempt}/${maxAttempts})`);
+                }
+
+                const response = await this.openai.chat.completions.create({
+                    model: this.model,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: instructions
+                        },
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ],
+                    max_tokens: Math.min(this.maxTokens, 80), // Conservative token limit
+                    temperature: this.temperature,
+                    presence_penalty: 0.6, // Encourage diverse responses
+                    frequency_penalty: 0.3  // Reduce repetition
+                });
+
+                const generatedReply = response.choices[0].message.content.trim();
+                const cleanReply = this.cleanReply(generatedReply);
+
+                // Check if reply is good (not truncated and valid length)
+                if (cleanReply.length > 0 && cleanReply.length <= this.aiReplyCharacterLimit && !cleanReply.endsWith('...')) {
+                    if (process.env.VERBOSE_LOGGING === 'true') {
+                        console.log('✅ Generated reply:', cleanReply);
+                        console.log(`📏 Length: ${cleanReply.length}/${this.aiReplyCharacterLimit} characters`);
+                        console.log('📊 Token usage:', response.usage);
                     }
-                ],
-                max_tokens: this.maxTokens,
-                temperature: this.temperature,
-                presence_penalty: 0.6, // Encourage diverse responses
-                frequency_penalty: 0.3  // Reduce repetition
-            });
+                    return cleanReply;
+                }
 
-            const generatedReply = response.choices[0].message.content.trim();
-
-            // Clean up the response (remove quotes if wrapped)
-            const cleanReply = this.cleanReply(generatedReply);
-
-            if (process.env.VERBOSE_LOGGING === 'true') {
-                console.log('✅ Generated reply:', cleanReply);
-                console.log('📊 Token usage:', response.usage);
+                if (process.env.VERBOSE_LOGGING === 'true') {
+                    console.log(`⚠️ Reply too long or truncated (${cleanReply.length} chars), retrying...`);
+                }
             }
 
-            return cleanReply;
+            // If all attempts failed, use fallback
+            throw new Error('All attempts produced replies that were too long');
 
         } catch (error) {
             console.error('❌ Error generating AI reply:', error.message);
@@ -113,6 +131,8 @@ ${tweetInfo.hasVideo ? 'This tweet contains a video.' : ''}
 ${tweetInfo.keyword ? `Found via search: ${tweetInfo.keyword}` : ''}
 
 Generate a thoughtful, engaging reply that adds value to the conversation.
+
+IMPORTANT: Your reply must be under ${this.aiReplyCharacterLimit} characters. Write a complete, natural sentence that fits within this limit.
         `.trim();
     }
 
@@ -124,12 +144,12 @@ Generate a thoughtful, engaging reply that adds value to the conversation.
     cleanReply(reply) {
         // Remove surrounding quotes if present
         let cleaned = reply.replace(/^["']|["']$/g, '');
+        
+        // Remove any leading/trailing whitespace
+        cleaned = cleaned.trim();
 
-        // Ensure it's under Twitter's character limit
-        if (cleaned.length > this.aiReplyCharacterLimit) {
-            cleaned = cleaned.substring(0, this.aiReplyCharacterLimit - 3) + '...';
-        }
-
+        // If it's over the limit, don't truncate with "..." - let the retry logic handle it
+        // This method should only do basic cleaning, not truncation
         return cleaned;
     }
 
@@ -145,6 +165,11 @@ Generate a thoughtful, engaging reply that adds value to the conversation.
 
         // Check length
         if (reply.length === 0 || reply.length > this.aiReplyCharacterLimit) {
+            return false;
+        }
+
+        // Check if it ends with truncation indicator
+        if (reply.endsWith('...') || reply.endsWith('…')) {
             return false;
         }
 

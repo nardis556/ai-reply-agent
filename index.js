@@ -27,7 +27,8 @@ const config = {
     maxTweetsPerRun: parseInt(process.env.MAX_TWEETS_PER_RUN) || 999,
     delayBetweenTweets: parseInt(process.env.DELAY_BETWEEN_TWEETS) || 2000,
     onlyVideoTweets: process.env.ONLY_VIDEO_TWEETS === 'true',
-    verboseLogging: process.env.VERBOSE_LOGGING === 'true'
+    verboseLogging: process.env.VERBOSE_LOGGING === 'true',
+    noNewTweetsScrollLimit: parseInt(process.env.NO_NEW_TWEETS_SCROLL) || 3
 };
 
 console.log('🔧 Configuration loaded:');
@@ -38,6 +39,7 @@ console.log(`   Search keyword: "${config.searchKeyword}"`);
 console.log(`   Headless mode: ${config.headless}`);
 console.log(`   Only video tweets: ${config.onlyVideoTweets}`);
 console.log(`   Max scroll attempts: ${config.maxScrollAttempts}`);
+console.log(`   No new tweets scroll limit: ${config.noNewTweetsScrollLimit}`);
 console.log('');
 
 // Initialize SQLite database
@@ -124,11 +126,13 @@ db.serialize(() => {
         console.log('Scrolling to load more tweets...');
         let previousTweetCount = 0;
         let scrollAttempts = 0;
+        let consecutiveNoNewTweets = 0; // Track consecutive scrolls with no new tweets
         const maxScrollAttempts = config.maxScrollAttempts; // From .env
+        const noNewTweetsScrollLimit = config.noNewTweetsScrollLimit; // From .env
         const seenTweetIds = new Set(); // Track seen tweets to avoid duplicate logging
         let totalSavedTweets = 0; // Track total tweets saved to DB
 
-        while (scrollAttempts < maxScrollAttempts) {
+        while (scrollAttempts < maxScrollAttempts && consecutiveNoNewTweets < noNewTweetsScrollLimit) {
             // Get current tweet count
             const currentTweetCount = await page.locator('[data-testid="tweet"]').count();
             console.log(`Current tweet count: ${currentTweetCount} (scroll attempt ${scrollAttempts + 1}/${maxScrollAttempts})`);
@@ -153,7 +157,7 @@ db.serialize(() => {
                                 userId: tweet.userId || 'Unknown',
                                 username: tweet.username,
                                 tweetText: tweet.tweetText,
-                                timeAgo: tweet.timeAgo,
+                                postedAt: tweet.datetime, // Use the actual ISO datetime, not timeAgo
                                 searchKeyword: searchKeyword,
                                 hasVideo: tweet.hasVideo
                             });
@@ -166,6 +170,9 @@ db.serialize(() => {
                                 console.log(`   💾 SAVED: @${tweet.username} (${tweet.timeAgo}) ${videoStatus}`);
                                 console.log(`           "${tweetPreview}${tweetPreview.length >= 50 ? '...' : ''}"`);
                                 console.log(`           ID: ${tweet.tweetId}`);
+                                if (tweet.datetime) {
+                                    console.log(`           Posted: ${tweet.datetime}`);
+                                }
                             }
                         } else {
                             if (config.verboseLogging) {
@@ -180,13 +187,21 @@ db.serialize(() => {
 
             if (newTweetsInThisScroll > 0) {
                 console.log(`   ✅ Saved ${newTweetsInThisScroll} new tweets to database`);
+                consecutiveNoNewTweets = 0; // Reset counter when new tweets are found
             } else {
-                console.log(`   ⚠️  No new tweets found in this scroll`);
+                consecutiveNoNewTweets++;
+                console.log(`   ⚠️  No new tweets found in this scroll (${consecutiveNoNewTweets}/${noNewTweetsScrollLimit})`);
+                
+                // Check if we've hit the consecutive no new tweets limit
+                if (consecutiveNoNewTweets >= noNewTweetsScrollLimit) {
+                    console.log(`🛑 Stopping scroll: ${consecutiveNoNewTweets} consecutive scrolls with no new tweets`);
+                    break;
+                }
             }
 
-            // If no new tweets were loaded, break
+            // If no new tweets were loaded (legacy check), break
             if (currentTweetCount === previousTweetCount && scrollAttempts > 0) {
-                console.log('No new tweets loaded, stopping scroll');
+                console.log('No new tweets loaded (DOM count unchanged), stopping scroll');
                 break;
             }
 
@@ -202,8 +217,17 @@ db.serialize(() => {
             scrollAttempts++;
         }
 
-        console.log(`Finished scrolling. Total tweets saved to database: ${totalSavedTweets}`);
+        console.log(`Finished scrolling after ${scrollAttempts} attempts. Total tweets saved to database: ${totalSavedTweets}`);
         console.log(`Total unique tweets discovered during search: ${seenTweetIds.size}`);
+        
+        // Log why scrolling stopped
+        if (consecutiveNoNewTweets >= noNewTweetsScrollLimit) {
+            console.log(`📋 Scroll stopped: ${consecutiveNoNewTweets} consecutive scrolls with no new tweets (limit: ${noNewTweetsScrollLimit})`);
+        } else if (scrollAttempts >= maxScrollAttempts) {
+            console.log(`📋 Scroll stopped: Reached maximum scroll attempts (${maxScrollAttempts})`);
+        } else {
+            console.log(`📋 Scroll stopped: DOM content unchanged`);
+        }
 
         // Remove the old timeline extraction since we're now saving during scroll
         // Extract and log ALL tweets first (for comprehensive logging)
@@ -329,9 +353,64 @@ db.serialize(() => {
 
                     await page.getByTestId('tweetTextarea_0').first().click();
                     await page.getByTestId('tweetTextarea_0').first().fill(aiReplyText);
+                    
+                    // Wait a moment for any autocomplete dialogs to appear
+                    await page.waitForTimeout(1000);
+                    
+                    // Check if reply ends with # or @ which might trigger autocomplete dialogs
+                    const endsWithSpecialChar = aiReplyText.endsWith('#') || aiReplyText.endsWith('@') || 
+                                              aiReplyText.match(/#\w*$/) || aiReplyText.match(/@\w*$/);
+                    
+                    if (endsWithSpecialChar) {
+                        console.log('🔧 Reply ends with # or @, handling potential autocomplete dialogs...');
+                        
+                        // Try to close any autocomplete dialogs by:
+                        // 1. Pressing Escape key
+                        await page.keyboard.press('Escape');
+                        await page.waitForTimeout(500);
+                        
+                        // 2. Click outside the textarea to close dialogs
+                        await page.click('body', { position: { x: 100, y: 100 } });
+                        await page.waitForTimeout(500);
+                        
+                        // 3. Click back on the textarea to ensure focus
+                        await page.getByTestId('tweetTextarea_0').first().click();
+                        await page.waitForTimeout(500);
+                        
+                        // 4. Add a space and then backspace to close any lingering dialogs
+                        await page.keyboard.press('End'); // Go to end of text
+                        await page.keyboard.press(' ');   // Add space
+                        await page.keyboard.press('Backspace'); // Remove space
+                        await page.waitForTimeout(500);
+                    }
+                    
+                    // Now try to click the tweet button
                     await page.getByTestId('tweetButton').first().click();
-
-                    console.log(`✅ AI reply sent: "${aiReplyText}"`);
+                    
+                    // Wait and verify the reply was posted by checking if the reply dialog closes
+                    await page.waitForTimeout(2000);
+                    
+                    // Check if reply was successful by looking for the absence of the tweet button
+                    const tweetButtonStillVisible = await page.getByTestId('tweetButton').first().isVisible().catch(() => false);
+                    
+                    if (tweetButtonStillVisible) {
+                        console.log('⚠️  Tweet button still visible, reply may not have posted. Retrying...');
+                        
+                        // Try one more time with additional dialog closing
+                        await page.keyboard.press('Escape');
+                        await page.waitForTimeout(500);
+                        await page.getByTestId('tweetButton').first().click();
+                        await page.waitForTimeout(2000);
+                        
+                        const stillVisible = await page.getByTestId('tweetButton').first().isVisible().catch(() => false);
+                        if (stillVisible) {
+                            console.log('❌ Reply posting failed despite retry attempts');
+                        } else {
+                            console.log(`✅ AI reply sent (after retry): "${aiReplyText}"`);
+                        }
+                    } else {
+                        console.log(`✅ AI reply sent: "${aiReplyText}"`);
+                    }
 
                     // Update database
                     await updateTweetReply(db, tweet.tweet_id, aiReplyText);
