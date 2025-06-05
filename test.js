@@ -29,7 +29,8 @@ const config = {
     delayBetweenTweets: parseInt(process.env.DELAY_BETWEEN_TWEETS) || 2000,
     onlyVideoTweets: process.env.ONLY_VIDEO_TWEETS === 'true',
     verboseLogging: process.env.VERBOSE_LOGGING === 'true',
-    noNewTweetsScrollLimit: parseInt(process.env.NO_NEW_TWEETS_SCROLL) || 3
+    noNewTweetsScrollLimit: parseInt(process.env.NO_NEW_TWEETS_SCROLL) || 3,
+    webhookUrl: process.env.WEBHOOK_URL || ''
 };
 
 console.log('🔧 Configuration loaded:');
@@ -46,7 +47,108 @@ console.log('');
 // Initialize AI Reply Agent
 const replyAgent = new ReplyAgent();
 
+/**
+ * Send a fancy Slack webhook notification with run summary
+ * @param {Object} summary - Run summary data
+ */
+async function sendWebhookSummary(summary) {
+    if (!config.webhookUrl) {
+        console.log('📢 No webhook URL configured, skipping notification');
+        return;
+    }
+
+    try {
+        const statusColor = summary.errors > 0 ? '#FF6B6B' : summary.newTweets > 0 ? '#4ECDC4' : '#95A5A6';
+        const statusEmoji = summary.errors > 0 ? '⚠️' : summary.newTweets > 0 ? '✅' : '🔍';
+        
+        const payload = {
+            attachments: [
+                {
+                    color: statusColor,
+                    title: `${statusEmoji} Twitter Bot Run Summary`,
+                    title_link: 'https://x.com/',
+                    fields: [
+                        {
+                            title: '🔍 Search Results',
+                            value: `• Keyword: \`${summary.searchKeyword}\`\n• Scroll attempts: ${summary.scrollAttempts}\n• Unique tweets discovered: ${summary.totalDiscovered}`,
+                            short: true
+                        },
+                        {
+                            title: '💾 Database Activity',
+                            value: `• New tweets saved: ${summary.newTweets}\n• Total visible: ${summary.totalVisible}\n• Video tweets: ${summary.videoTweets}`,
+                            short: true
+                        },
+                        {
+                            title: '🤖 Processing Stats',
+                            value: `• Tweets processed: ${summary.processed}\n• Replies sent: ${summary.repliesSent}\n• Reply mode: \`${summary.replyMode}\``,
+                            short: true
+                        },
+                        {
+                            title: '⏱️ Performance',
+                            value: `• Duration: ${summary.duration}\n• Status: ${summary.status}\n• Errors: ${summary.errors}`,
+                            short: true
+                        }
+                    ],
+                    footer: 'Twitter Bot',
+                    footer_icon: 'https://abs.twimg.com/favicons/twitter.3.ico',
+                    ts: Math.floor(Date.now() / 1000)
+                }
+            ]
+        };
+
+        if (summary.stopReason) {
+            payload.attachments[0].fields.push({
+                title: '🛑 Stop Reason',
+                value: summary.stopReason,
+                short: false
+            });
+        }
+
+        if (summary.errors > 0 && summary.errorDetails) {
+            payload.attachments[0].fields.push({
+                title: '❌ Latest Error',
+                value: `\`\`\`${summary.errorDetails}\`\`\``,
+                short: false
+            });
+        }
+
+        const response = await fetch(config.webhookUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            console.log('📢 Webhook notification sent successfully');
+        } else {
+            console.log(`📢 Webhook failed: ${response.status} ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error('📢 Error sending webhook:', error.message);
+    }
+}
+
 const main = async () => {
+    const startTime = Date.now();
+    let runSummary = {
+        searchKeyword: config.searchKeyword,
+        scrollAttempts: 0,
+        totalDiscovered: 0,
+        newTweets: 0,
+        totalVisible: 0,
+        videoTweets: 0,
+        processed: 0,
+        repliesSent: 0,
+        replyMode: config.replyMode,
+        errors: 0,
+        errorDetails: null,
+        status: 'Success',
+        stopReason: null,
+        duration: '0m 0s'
+    };
+
     // Initialize SQLite database for this run
     const __dirname = path.dirname(new URL(import.meta.url).pathname);
     const dbPath = path.join(__dirname, 'tweets.db');
@@ -131,6 +233,7 @@ const main = async () => {
         const noNewTweetsScrollLimit = config.noNewTweetsScrollLimit; // From .env
         const seenTweetIds = new Set(); // Track seen tweets to avoid duplicate logging
         let totalSavedTweets = 0; // Track total tweets saved to DB
+        let totalVideoTweets = 0; // Track video tweets saved during scroll
 
         while (scrollAttempts < maxScrollAttempts && consecutiveNoNewTweets < noNewTweetsScrollLimit) {
             // Get current tweet count
@@ -163,6 +266,9 @@ const main = async () => {
                             });
                             totalSavedTweets++;
                             newTweetsInThisScroll++;
+                            if (tweet.hasVideo) {
+                                totalVideoTweets++;
+                            }
 
                             if (config.verboseLogging) {
                                 const videoStatus = tweet.hasVideo ? '[📹 VIDEO]' : '[📝 TEXT]';
@@ -216,13 +322,22 @@ const main = async () => {
         console.log(`Finished scrolling after ${scrollAttempts} attempts. Total tweets saved to database: ${totalSavedTweets}`);
         console.log(`Total unique tweets discovered during search: ${seenTweetIds.size}`);
 
+        // Update summary data
+        runSummary.scrollAttempts = scrollAttempts;
+        runSummary.totalDiscovered = seenTweetIds.size;
+        runSummary.newTweets = totalSavedTweets;
+        runSummary.videoTweets = totalVideoTweets;
+
         // Log why scrolling stopped
         if (consecutiveNoNewTweets >= noNewTweetsScrollLimit) {
-            console.log(`📋 Scroll stopped: ${consecutiveNoNewTweets} consecutive scrolls with no new tweets (limit: ${noNewTweetsScrollLimit})`);
+            runSummary.stopReason = `${consecutiveNoNewTweets} consecutive scrolls with no new tweets (limit: ${noNewTweetsScrollLimit})`;
+            console.log(`📋 Scroll stopped: ${runSummary.stopReason}`);
         } else if (scrollAttempts >= maxScrollAttempts) {
-            console.log(`📋 Scroll stopped: Reached maximum scroll attempts (${maxScrollAttempts})`);
+            runSummary.stopReason = `Reached maximum scroll attempts (${maxScrollAttempts})`;
+            console.log(`📋 Scroll stopped: ${runSummary.stopReason}`);
         } else {
-            console.log(`📋 Scroll stopped: DOM content unchanged`);
+            runSummary.stopReason = 'DOM content unchanged';
+            console.log(`📋 Scroll stopped: ${runSummary.stopReason}`);
         }
 
         // Remove the old timeline extraction since we're now saving during scroll
@@ -249,6 +364,10 @@ const main = async () => {
         console.log(`📹 Final visible tweets with videos: ${videoTweets.length}`);
         console.log(`📝 Final visible text-only tweets: ${textOnlyTweets.length}`);
         console.log(`💾 Total tweets saved to DB during scroll: ${totalSavedTweets}`);
+
+        // Update summary data  
+        runSummary.totalVisible = seenTweetIds.size; // Use actual discovered count, not final page state
+        // runSummary.videoTweets already set during scroll to be more accurate
 
         // Remove old timeline processing since we're doing it during scroll
         // Extract all tweets from timeline
@@ -296,6 +415,8 @@ const main = async () => {
 
         const finalTweetsToProcess = Math.min(tweetsToReply.length, maxTweetsPerRun);
         console.log(`Will process ${finalTweetsToProcess} tweets this run`);
+
+        runSummary.processed = finalTweetsToProcess;
 
         // Process each tweet
         for (let i = 0; i < finalTweetsToProcess; i++) {
@@ -403,9 +524,11 @@ const main = async () => {
                             console.log('❌ Reply posting failed despite retry attempts');
                         } else {
                             console.log(`✅ AI reply sent (after retry): "${aiReplyText}"`);
+                            runSummary.repliesSent++;
                         }
                     } else {
                         console.log(`✅ AI reply sent: "${aiReplyText}"`);
+                        runSummary.repliesSent++;
                     }
 
                     // Update database
@@ -425,6 +548,8 @@ const main = async () => {
 
             } catch (error) {
                 console.error(`Error processing tweet ${tweet.tweet_id}:`, error.message);
+                runSummary.errors++;
+                runSummary.errorDetails = error.message;
             }
         }
 
@@ -435,7 +560,20 @@ const main = async () => {
 
     } catch (error) {
         console.error('Error:', error);
+        runSummary.errors++;
+        runSummary.errorDetails = error.message;
+        runSummary.status = 'Failed';
     } finally {
+        // Calculate run duration
+        const endTime = Date.now();
+        const durationMs = endTime - startTime;
+        const minutes = Math.floor(durationMs / 60000);
+        const seconds = Math.floor((durationMs % 60000) / 1000);
+        runSummary.duration = `${minutes}m ${seconds}s`;
+
+        // Send webhook summary
+        await sendWebhookSummary(runSummary);
+
         await context.close();
         console.log('Profile saved! Next run will remember your login.');
 
