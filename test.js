@@ -451,4 +451,12 @@ const main = async () => {
     }
 }
 
-main();
+const runEvery30Mins = async () => {
+    while (true) {
+        await main();
+        // Wait 30 minutes (30 * 60 * 1000 milliseconds)
+        await setTimeout(30 * 60 * 1000);
+    }
+}
+
+runEvery30Mins();
