@@ -43,32 +43,31 @@ console.log(`   Max scroll attempts: ${config.maxScrollAttempts}`);
 console.log(`   No new tweets scroll limit: ${config.noNewTweetsScrollLimit}`);
 console.log('');
 
-// Initialize SQLite database
-const __dirname = path.dirname(new URL(import.meta.url).pathname);
-const dbPath = path.join(__dirname, 'tweets.db');
-const db = new sqlite3.Database(dbPath);
-
 // Initialize AI Reply Agent
 const replyAgent = new ReplyAgent();
 
-// Create table if it doesn't exist
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS tweets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    posted_at DATETIME,
-    tweet_id TEXT UNIQUE,
-    user_id TEXT,
-    username TEXT,
-    tweet_text TEXT,
-    search_keyword TEXT,
-    video BOOLEAN DEFAULT 0,
-    replied BOOLEAN DEFAULT 0,
-    reply_text TEXT
-  )`);
-});
-
 const main = async () => {
+    // Initialize SQLite database for this run
+    const __dirname = path.dirname(new URL(import.meta.url).pathname);
+    const dbPath = path.join(__dirname, 'tweets.db');
+    const db = new sqlite3.Database(dbPath);
+
+    // Create table if it doesn't exist
+    db.serialize(() => {
+        db.run(`CREATE TABLE IF NOT EXISTS tweets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        posted_at DATETIME,
+        tweet_id TEXT UNIQUE,
+        user_id TEXT,
+        username TEXT,
+        tweet_text TEXT,
+        search_keyword TEXT,
+        video BOOLEAN DEFAULT 0,
+        replied BOOLEAN DEFAULT 0,
+        reply_text TEXT
+      )`);
+    });
     // Use persistent context to save login sessions
     const userDataDir = path.join(__dirname, 'browser-profile');
 
@@ -453,7 +452,9 @@ const main = async () => {
 
 const runEvery30Mins = async () => {
     while (true) {
+        console.log('\n🔄 Starting new run...');
         await main();
+        console.log('\n⏰ Waiting 30 minutes before next run...');
         // Wait 30 minutes (30 * 60 * 1000 milliseconds)
         await setTimeout(30 * 60 * 1000);
     }
