@@ -60,7 +60,7 @@ async function sendWebhookSummary(summary) {
     try {
         const statusColor = summary.errors > 0 ? '#FF6B6B' : summary.newTweets > 0 ? '#4ECDC4' : '#95A5A6';
         const statusEmoji = summary.errors > 0 ? '⚠️' : summary.newTweets > 0 ? '✅' : '🔍';
-        
+
         const payload = {
             attachments: [
                 {
@@ -313,7 +313,10 @@ const main = async () => {
 
             // Scroll down
             await page.keyboard.press('PageDown');
-            await page.keyboard.press('PageDown'); // Double scroll for more distance
+            await setTimeout(500)
+            await page.keyboard.press('PageDown');
+            await setTimeout(500)
+            await page.keyboard.press('PageDown');
 
             // Wait for new content to load
             await page.waitForTimeout(3000);
