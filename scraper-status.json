@@ -1,0 +1,32 @@
+{
+  "isRunning": false,
+  "status": "sleeping",
+  "lastCompletedRun": 1,
+  "totalRuns": 1,
+  "successfulRuns": 1,
+  "lastRunTime": "2025-06-06T23:21:28.704Z",
+  "lastRunResult": {
+    "success": true,
+    "runNumber": 1,
+    "totalDiscovered": 3,
+    "totalSaved": 3,
+    "videoTweets": 0,
+    "scrollAttempts": 5,
+    "duration": "1m 2s",
+    "durationSeconds": 62,
+    "searchKeyword": "#test_test_test_12345",
+    "timestamp": "2025-06-06T23:21:28.680Z",
+    "webhookSent": false
+  },
+  "nextRunTime": "2025-06-06T23:51:28.751Z",
+  "nextRunTimestamp": 1749253888751,
+  "remainingSeconds": 1655,
+  "lastUpdated": "2025-06-06T23:23:53.958Z",
+  "timestamp": 1749252233958,
+  "config": {
+    "searchKeyword": "#test_test_test_12345",
+    "runInterval": 30,
+    "headless": true,
+    "runContinuously": true
+  }
+}
