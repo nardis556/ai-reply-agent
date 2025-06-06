@@ -131,9 +131,9 @@ export function checkTweetExists(db, tweetId) {
  */
 export function saveTweet(db, tweetData) {
     return new Promise((resolve, reject) => {
-        db.run(`INSERT INTO tweets (tweet_id, user_id, username, tweet_text, search_keyword, posted_at, video) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [tweetData.tweetId, tweetData.userId, tweetData.username, tweetData.tweetText, tweetData.searchKeyword, tweetData.postedAt, tweetData.hasVideo ? 1 : 0],
+        db.run(`INSERT INTO tweets (tweet_id, user_id, username, tweet_text, tweet_url, search_keyword, posted_at, video) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [tweetData.tweetId, tweetData.userId, tweetData.username, tweetData.tweetText, tweetData.tweetUrl, tweetData.searchKeyword, tweetData.postedAt, tweetData.hasVideo ? 1 : 0],
             function (err) {
                 if (err) reject(err);
                 else resolve(this.lastID);
