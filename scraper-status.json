@@ -20,9 +20,9 @@
   },
   "nextRunTime": "2025-06-06T23:51:28.751Z",
   "nextRunTimestamp": 1749253888751,
-  "remainingSeconds": 1655,
-  "lastUpdated": "2025-06-06T23:23:53.958Z",
-  "timestamp": 1749252233958,
+  "remainingSeconds": 1650,
+  "lastUpdated": "2025-06-06T23:23:58.964Z",
+  "timestamp": 1749252238964,
   "config": {
     "searchKeyword": "#test_test_test_12345",
     "runInterval": 30,
