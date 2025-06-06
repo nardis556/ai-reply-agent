@@ -164,6 +164,7 @@ const main = async () => {
         user_id TEXT,
         username TEXT,
         tweet_text TEXT,
+        tweet_url TEXT,
         search_keyword TEXT,
         video BOOLEAN DEFAULT 0,
         replied BOOLEAN DEFAULT 0,
@@ -260,6 +261,7 @@ const main = async () => {
                                 userId: tweet.userId || 'Unknown',
                                 username: tweet.username,
                                 tweetText: tweet.tweetText,
+                                tweetUrl: `https://x.com/${tweet.username}/status/${tweet.tweetId}`,
                                 postedAt: tweet.datetime, // Use the actual ISO datetime, not timeAgo
                                 searchKeyword: searchKeyword,
                                 hasVideo: tweet.hasVideo
