@@ -35,7 +35,12 @@ export class ReplyGenerator {
      * @returns {Promise<Object>} Generation result with reply and metadata
      */
     async generateReply(tweetData, customInstructions = null, options = {}) {
-        const instructions = customInstructions || AI_CONFIG.getDefaultInstructions(this.config.characterLimit);
+        const instructions = customInstructions || await AI_CONFIG.getDefaultInstructions(this.config.characterLimit);
+        console.log('📝 [ReplyGenerator] Final instructions being used:');
+        console.log('📝 [ReplyGenerator] Instructions preview:', instructions.substring(0, 100) + '...');
+        console.log('📝 [ReplyGenerator] Instructions length:', instructions.length);
+        console.log('📝 [ReplyGenerator] Using custom instructions:', !!customInstructions);
+        
         const maxAttempts = options.maxAttempts || this.config.maxAttempts;
         
         if (this.verbose) {
@@ -119,7 +124,11 @@ export class ReplyGenerator {
      * @returns {Promise<Object>} Multiple reply options
      */
     async generateReplyOptions(tweetData, count = 3, customInstructions = null) {
-        const instructions = customInstructions || AI_CONFIG.getDefaultInstructions(this.config.characterLimit);
+        const instructions = customInstructions || await AI_CONFIG.getDefaultInstructions(this.config.characterLimit);
+        console.log('📝 [ReplyGenerator-Options] Final instructions being used:');
+        console.log('📝 [ReplyGenerator-Options] Instructions preview:', instructions.substring(0, 100) + '...');
+        console.log('📝 [ReplyGenerator-Options] Instructions length:', instructions.length);
+        console.log('📝 [ReplyGenerator-Options] Using custom instructions:', !!customInstructions);
         
         if (this.verbose) {
             console.log(`🤖 Generating ${count} reply options for tweet: ${tweetData.tweet_id || 'Unknown'}`);

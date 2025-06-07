@@ -2,7 +2,7 @@
  * Twitter Scraper Controller
  * Orchestrates the complete scraping workflow with the new architecture
  */
-import { chromium } from 'playwright';
+import { firefox } from 'playwright';
 import path from 'path';
 import { extractAndLogAllTweets, scrollAndWaitForTweets, countVisibleTweets } from './tweet-extractor.js';
 
@@ -32,8 +32,9 @@ export class TwitterScraper {
         const userDataDir = path.join(__dirname, '..', '..', 'browser-profile');
 
         // Launch browser with persistent profile
-        this.context = await chromium.launchPersistentContext(userDataDir, {
-            headless: this.config.headless,
+        this.context = await firefox.launchPersistentContext(userDataDir, {
+            // headless: this.config.headless,
+            headless: false,
             slowMo: this.config.slowMo,
             viewport: { width: 1280, height: 720 }
         });

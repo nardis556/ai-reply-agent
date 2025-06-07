@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { loadConfiguration } from './api/routes/config.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -14,8 +15,8 @@ class ReplyAgent {
         this.temperature = parseFloat(process.env.OPENAI_TEMPERATURE) || 0.7;
         this.aiReplyCharacterLimit = parseInt(process.env.AI_REPLY_CHARACTER_LIMIT) || 280;
 
-        // Default personality and instructions
-        this.defaultInstructions = process.env.REPLY_INSTRUCTIONS || `
+        // Default personality and instructions (fallback only)
+        this.fallbackInstructions = `
 You are a helpful and engaging Twitter user. Reply in human like terms. Write your response in full string. Generate a thoughtful, relevant reply to the given tweet.
 
 CRITICAL: Your response must be EXACTLY under ${this.aiReplyCharacterLimit} characters. Count characters carefully!
@@ -34,6 +35,44 @@ Guidelines:
     }
 
     /**
+     * Load fresh instructions from JSON configuration
+     * @returns {Promise<string>} Current reply instructions
+     */
+    async loadInstructions() {
+        try {
+            console.log('🔧 [ReplyAgent] Loading instructions from JSON config...');
+            const config = await loadConfiguration();
+            console.log('🔧 [ReplyAgent] Loaded config:', {
+                has_reply_instructions: !!config.reply_instructions,
+                reply_instructions_length: config.reply_instructions ? config.reply_instructions.length : 0,
+                reply_instructions_preview: config.reply_instructions ? config.reply_instructions.substring(0, 50) + '...' : 'N/A'
+            });
+            
+            if (config.reply_instructions) {
+                const finalInstructions = `
+${config.reply_instructions}
+
+CRITICAL: Your response must be EXACTLY under ${this.aiReplyCharacterLimit} characters. Count characters carefully!
+
+Guidelines:
+- MUST be under ${this.aiReplyCharacterLimit} characters (this is CRITICAL)
+- Write complete sentences, not truncated ones
+- Sound natural and human-like
+                `.trim();
+                
+                console.log('✅ [ReplyAgent] Using JSON config instructions');
+                return finalInstructions;
+            }
+        } catch (error) {
+            console.error('⚠️ [ReplyAgent] Failed to load JSON config for reply instructions:', error.message);
+        }
+        
+        // Fallback to default instructions
+        console.log('🔄 [ReplyAgent] Using fallback instructions');
+        return this.fallbackInstructions;
+    }
+
+    /**
      * Generate an AI-powered reply to a tweet
      * @param {Object} tweetData - The tweet data object
      * @param {string} customInstructions - Optional custom instructions for this reply
@@ -45,7 +84,11 @@ Guidelines:
                 throw new Error('OPENAI_API_KEY not found in environment variables');
             }
 
-            const instructions = customInstructions || this.defaultInstructions;
+            const instructions = customInstructions || await this.loadInstructions();
+            console.log('📝 [ReplyAgent] Final instructions being used for OpenAI:');
+            console.log('📝 [ReplyAgent] Instructions preview:', instructions.substring(0, 100) + '...');
+            console.log('📝 [ReplyAgent] Instructions length:', instructions.length);
+            
             let attempt = 0;
             const maxAttempts = 3;
 

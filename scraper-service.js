@@ -10,10 +10,11 @@ import fs from 'fs';
 import { setTimeout } from 'timers/promises';
 import Database from './src/database/database.js';
 import { extractAndLogAllTweets, scrollAndWaitForTweets, countVisibleTweets } from './src/scraper/tweet-extractor.js';
+import { loadConfiguration } from './src/api/routes/config.js';
 
-// Load configuration from .env
+// Load configuration from .env (except search keyword which comes from JSON config)
 const config = {
-    searchKeyword: process.env.SEARCH_KEYWORD || '#test_test_test_12345',
+    searchKeyword: '#test_test_test_12345', // Will be loaded from JSON config
     headless: process.env.HEADLESS !== 'false', // Default to true (headless)
     slowMo: parseInt(process.env.SLOW_MO) || 1000,
     maxScrollAttempts: parseInt(process.env.MAX_SCROLL_ATTEMPTS) || 20,
@@ -30,6 +31,21 @@ const config = {
     // Webhook broadcasting
     broadcastWebhook: process.env.BROADCAST_WEBHOOK === 'true'
 };
+
+/**
+ * Load fresh configuration including search keyword from JSON config
+ */
+async function loadFreshConfig() {
+    try {
+        const jsonConfig = await loadConfiguration();
+        config.searchKeyword = jsonConfig.search_keyword || '#test_test_test_12345';
+        return config;
+    } catch (error) {
+        console.error('⚠️ Failed to load JSON config, using default search keyword:', error.message);
+        config.searchKeyword = '#test_test_test_12345';
+        return config;
+    }
+}
 
 // Control files
 const CONTROL_FILE = './scraper-control.json';
@@ -185,6 +201,7 @@ async function initializeBrowser() {
     try {
         currentContext = await chromium.launchPersistentContext(userDataDir, {
             headless: config.headless,
+            // headless: false,
             slowMo: config.slowMo,
             viewport: { width: 1280, height: 720 },
             args: [
@@ -225,6 +242,10 @@ async function runScrapingSession(runNumber) {
     try {
         console.log(`🚀 Starting scraping session #${runNumber}`);
         
+        // Load fresh configuration from JSON config
+        await loadFreshConfig();
+        console.log(`🔍 Using search keyword: "${config.searchKeyword}"`);
+        
         // Initialize database
         await database.initialize();
         
@@ -257,6 +278,9 @@ async function runScrapingSession(runNumber) {
         // Check login status
         console.log('🔐 Checking login status...');
         const isLoggedIn = await page.locator('[data-testid="tweetTextarea_0"]').isVisible().catch(() => false);
+
+
+        // await setTimeout(10000000)
 
         if (!isLoggedIn) {
             if (config.headless) {
@@ -548,6 +572,10 @@ async function runContinuousScraping() {
  */
 async function main() {
     try {
+        // Load initial configuration from JSON
+        await loadFreshConfig();
+        console.log(`🔧 Initial configuration loaded. Search keyword: "${config.searchKeyword}"`);
+        
         if (config.runContinuously) {
             await runContinuousScraping();
         } else {

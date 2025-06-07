@@ -273,6 +273,7 @@ export class Database {
                 pending: "SELECT COUNT(*) as count FROM tweets WHERE status = 'pending'",
                 replied: "SELECT COUNT(*) as count FROM tweets WHERE status = 'replied'",
                 skipped: "SELECT COUNT(*) as count FROM tweets WHERE status = 'skipped'",
+                failed: "SELECT COUNT(*) as count FROM tweets WHERE status = 'failed'",
                 total: "SELECT COUNT(*) as count FROM tweets",
                 videos: "SELECT COUNT(*) as count FROM tweets WHERE video = 1"
             };

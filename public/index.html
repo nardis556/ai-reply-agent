@@ -573,6 +573,100 @@
             100% { opacity: 1; }
         }
 
+        /* Loading spinner animation */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 8px;
+        }
+
+        .btn.loading {
+            background-color: #6c757d !important;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        /* Fix for Send Replies button to prevent vertical expansion */
+        #send-replies-btn {
+            min-height: 42px; /* Fixed height to prevent expansion */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+        }
+
+        #send-replies-btn .loading-spinner {
+            flex-shrink: 0; /* Prevent spinner from shrinking */
+        }
+
+        /* Configuration Panel Styles */
+        .config-panel {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .config-panel h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .config-form-group {
+            margin-bottom: 15px;
+        }
+
+        .config-form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .config-form-group input,
+        .config-form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9em;
+            box-sizing: border-box;
+        }
+
+        .config-form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: inherit;
+        }
+
+        .config-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .config-actions .btn {
+            flex: 1;
+            font-size: 0.9em;
+            padding: 8px 12px;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
@@ -602,6 +696,7 @@
             <button class="tab" onclick="showTab('pending')">⏳ Pending Replies</button>
             <button class="tab" onclick="showTab('history')">📜 Reply History</button>
             <button class="tab" onclick="showTab('skipped')">🗑️ Skipped</button>
+            <button class="tab" onclick="showTab('failed')">❌ Failed</button>
         </div>
 
         <!-- Tab Content -->
@@ -610,7 +705,7 @@
             <div class="tab-pane active" id="review-tab">
                 <div class="controls">
                     <button class="btn btn-success" onclick="replyToSelected()">📤 Select for Reply</button>
-                    <button class="btn btn-primary" onclick="triggerReplies()">📤 Send Replies</button>
+                    <button id="send-replies-btn" class="btn btn-primary" onclick="triggerReplies()">📤 Send Replies</button>
                     <button class="btn btn-warning" onclick="skipSelected()">Skip Selected</button>
                     <button class="btn btn-primary" onclick="refreshTweets()">🔄 Refresh</button>
                     <button class="btn btn-primary" onclick="selectAll()">Select All</button>
@@ -667,7 +762,7 @@
             <!-- Skipped Tweets Tab -->
             <div class="tab-pane" id="skipped-tab">
                 <div class="controls">
-                    <button class="btn btn-primary" onclick="refreshSkipped()">🔄 Refresh</button>
+                    <button class="btn btn-primary" onclick="refreshSkipped()">🔄 Refresh Skipped</button>
                 </div>
 
                 <div id="skipped-tweets-container" class="tweets-container">
@@ -675,6 +770,19 @@
                 </div>
 
                 <div class="pagination" id="skipped-pagination"></div>
+            </div>
+
+            <!-- Failed Tweets Tab -->
+            <div class="tab-pane" id="failed-tab">
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="refreshFailed()">🔄 Refresh Failed</button>
+                </div>
+
+                <div id="failed-tweets-container" class="tweets-container">
+                    <div class="loading">Loading failed tweets...</div>
+                </div>
+
+                <div class="pagination" id="failed-pagination"></div>
             </div>
             </div>
             </div>
@@ -686,14 +794,18 @@
                         <div class="stat-number" id="stat-pending">-</div>
                         <div class="stat-label">Pending Review</div>
                     </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="stat-replied">-</div>
-                        <div class="stat-label">Replied</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="stat-videos">-</div>
-                        <div class="stat-label">Video Tweets</div>
-                    </div>
+                                <div class="stat-card">
+                <div class="stat-number" id="stat-replied">-</div>
+                <div class="stat-label">Replied</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="stat-failed">-</div>
+                <div class="stat-label">Failed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="stat-videos">-</div>
+                <div class="stat-label">Video Tweets</div>
+            </div>
                     <div class="stat-card">
                         <div class="stat-number" id="stat-total">-</div>
                         <div class="stat-label">Total Tweets</div>
@@ -705,6 +817,23 @@
                             <div id="scraper-status-text">Loading...</div>
                             <div id="countdown-display" class="countdown-display"></div>
                         </div>
+                    </div>
+                </div>
+                
+                <!-- Configuration Panel -->
+                <div class="config-panel">
+                    <h3>⚙️ Bot Configuration</h3>
+                    <div class="config-form-group">
+                        <label for="search-keyword">Search Keyword:</label>
+                        <input type="text" id="search-keyword" placeholder="#test_test_test_12345" />
+                    </div>
+                    <div class="config-form-group">
+                        <label for="reply-instructions">Reply Instructions:</label>
+                        <textarea id="reply-instructions" placeholder="You are a friendly Twitter user who loves sharing interesting connections between unexpected topics..."></textarea>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn btn-success" onclick="saveConfig()">💾 Save Config</button>
+                        <button class="btn btn-primary" onclick="loadConfig()">🔄 Reload</button>
                     </div>
                 </div>
             </div>

@@ -7,12 +7,12 @@ import path from 'path';
 import fs from 'fs/promises';
 import Database from './src/database/database.js';
 import { createReplyAgent } from './src/agent/index.js';
-import dotenv from 'dotenv';
+import dotenv from 'dotenv'; ``
 dotenv.config();
 
 // Configuration
 const config = {
-    headless: true,
+    headless: process.env.HEADLESS === 'true',
     slowMo: parseInt(process.env.SLOW_MO) || 1000,
     delayBetweenTweets: 5000, // 5 seconds between replies
     maxRetries: 3,
@@ -149,7 +149,7 @@ async function postReply(page, tweet, replyText) {
 
     // Navigate to tweet
     await page.goto(tweetUrl, { waitUntil: 'domcontentloaded' });
-    
+
     // Wait for page load
     console.log('⏳ Waiting for page to load...');
     try {
@@ -158,12 +158,13 @@ async function postReply(page, tweet, replyText) {
         console.log('⚠️ Network not idle, continuing anyway...');
         await page.waitForSelector('body', { timeout: 10000 });
     }
-    
+
     await page.waitForTimeout(2000);
 
-    // Click reply button
-    console.log('💬 Clicking reply button...');
-    await page.getByTestId('reply').first().click();
+    // Since we're on the specific tweet page, just use the first reply button
+    const replyButton = page.getByTestId('reply').first();
+    await replyButton.click();
+    console.log('💬 Reply button clicked');
     await page.waitForTimeout(1000);
 
     // Fill in reply text
@@ -171,17 +172,78 @@ async function postReply(page, tweet, replyText) {
     const textarea = page.getByTestId('tweetTextarea_0').first();
     await textarea.click();
     await textarea.fill(replyText);
-    await page.waitForTimeout(1000);
+    console.log(`✅ Reply text filled: "${replyText}"`);
+    await page.waitForTimeout(500);
 
     // Post the reply
     console.log('📤 Posting reply...');
-    await page.getByTestId('tweetButton').first().click();
-    await page.waitForTimeout(2000);
 
-    // Verify reply was posted
-    const tweetButtonStillVisible = await page.getByTestId('tweetButton').first().isVisible().catch(() => false);
+    // Wait a moment for any autocomplete to settle, then click tweet button
+    await page.waitForTimeout(1000);
+
+    try {
+        const tweetButton = page.getByTestId('tweetButton');
+        await tweetButton.click();
+        console.log('🖱️ Tweet button clicked successfully');
+    } catch (error) {
+        console.error('❌ Failed to click tweet button:', error.message);
+        throw new Error(`Failed to click tweet button: ${error.message}`);
+    }
+
+    // Monitor tweet button visibility over time to see if it disappears/reappears
+    console.log('👀 Monitoring tweet button visibility...');
+    for (let i = 0; i < 10; i++) {
+        await page.waitForTimeout(200);
+        const visible = await page.getByTestId('tweetButton').isVisible().catch(() => false);
+        console.log(`🔍 Tweet button visible after ${(i + 1) * 200}ms: ${visible}`);
+
+        // If button disappears, that's usually a good sign the reply posted
+        if (!visible) {
+            console.log('✅ Tweet button disappeared - reply likely posted successfully');
+            break;
+        }
+    }
+
+    // Final check after 2 seconds
+    await page.waitForTimeout(2000);
+    const tweetButtonStillVisible = await page.getByTestId('tweetButton').isVisible().catch(() => false);
+
+    console.log(`🔍 Final tweet button visibility check: ${tweetButtonStillVisible}`);
+
     if (tweetButtonStillVisible) {
-        throw new Error('Reply posting failed - tweet button still visible');
+        console.log('⚠️  Tweet button still visible, reply may not have posted. Retrying...');
+
+        // Try one more time with additional dialog closing
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+
+        const buttonVisibleAfterEscape = await page.getByTestId('tweetButton').isVisible().catch(() => false);
+        console.log(`🔍 Tweet button visible after Escape: ${buttonVisibleAfterEscape}`);
+
+        if (buttonVisibleAfterEscape) {
+            await page.getByTestId('tweetButton').click();
+            console.log('🖱️ Tweet button clicked (retry)');
+
+            // Monitor again during retry
+            for (let i = 0; i < 10; i++) {
+                await page.waitForTimeout(200);
+                const visible = await page.getByTestId('tweetButton').isVisible().catch(() => false);
+                console.log(`🔍 [RETRY] Tweet button visible after ${(i + 1) * 200}ms: ${visible}`);
+                if (!visible) break;
+            }
+        }
+
+        await page.waitForTimeout(2000);
+        const stillVisible = await page.getByTestId('tweetButton').isVisible().catch(() => false);
+        console.log(`🔍 Final retry check - Tweet button visible: ${stillVisible}`);
+
+        if (stillVisible) {
+            throw new Error('Reply posting failed despite retry attempts');
+        } else {
+            console.log('✅ Reply posted successfully after retry');
+        }
+    } else {
+        console.log('✅ Reply posted successfully on first attempt');
     }
 
     console.log(`✅ Reply posted successfully: "${replyText}"`);
@@ -193,7 +255,7 @@ async function postReply(page, tweet, replyText) {
  */
 export async function processReplies() {
     console.log('\n🎬 ===== REPLY PROCESSING STARTED =====');
-    
+
     const startTime = Date.now();
     let processed = 0;
     let successful = 0;
@@ -204,7 +266,7 @@ export async function processReplies() {
     try {
         console.log('\n🔍 Step 1: Initializing database...');
         await updateStatus('running', 'Initializing database...');
-        
+
         database = new Database();
         await database.initialize();
         console.log('✅ Database initialized');
@@ -212,10 +274,10 @@ export async function processReplies() {
         console.log('\n🔍 Step 2: Checking for tweets to reply to...');
         const selectedTweets = await getSelectedTweets(database);
         console.log(`📊 Found ${selectedTweets.length} selected tweets`);
-        
+
         if (selectedTweets.length === 0) {
             console.log('📭 No tweets selected for reply');
-            await updateStatus('completed', 'No tweets selected for reply', { 
+            await updateStatus('completed', 'No tweets selected for reply', {
                 lastRunResult: { processed: 0, successful: 0, failed: 0 }
             });
             return { success: true, processed: 0, successful: 0, failed: 0 };
@@ -229,6 +291,7 @@ export async function processReplies() {
 
         context = await chromium.launchPersistentContext(userDataDir, {
             headless: config.headless,
+            // headless: false,
             slowMo: config.slowMo,
             viewport: { width: 1280, height: 720 }
         });
@@ -242,7 +305,7 @@ export async function processReplies() {
 
         console.log('\n🔄 Step 4: Processing each tweet...');
         const replyAgent = createReplyAgent();
-        
+
         // Process each tweet
         for (const tweet of selectedTweets) {
             processed++;
@@ -291,14 +354,14 @@ export async function processReplies() {
             await context.close();
             console.log('🔒 Browser closed');
         }
-        
+
         if (database) {
             await database.close();
             console.log('🔒 Database closed');
         }
 
         const duration = Math.round((Date.now() - startTime) / 1000);
-        
+
         console.log('\n--- Reply Processing Complete ---');
         console.log(`📊 Processed: ${processed} tweets`);
         console.log(`✅ Successful: ${successful} replies`);
@@ -306,10 +369,10 @@ export async function processReplies() {
         console.log(`⏱️ Duration: ${duration} seconds`);
 
         await updateStatus('completed', 'Reply processing completed', {
-            lastRunResult: { 
-                processed, 
-                successful, 
-                failed, 
+            lastRunResult: {
+                processed,
+                successful,
+                failed,
                 duration,
                 timestamp: new Date().toISOString()
             }

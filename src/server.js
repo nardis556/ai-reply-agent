@@ -15,6 +15,7 @@ import testRouter from './api/routes/test.js';
 import scraperRouter from './api/routes/scraper.js';
 import scraperLogsRouter from './api/routes/scraper-logs.js';
 import replyRouter from './api/routes/reply.js';
+import configRouter from './api/routes/config.js';
 
 // ES modules equivalent of __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -50,6 +51,7 @@ app.use('/api/test', testRouter);
 app.use('/api/scraper', scraperRouter);
 app.use('/api/scraper-logs', scraperLogsRouter);
 app.use('/api/reply', replyRouter);
+app.use('/api/config', configRouter);
 
 // API Status endpoint
 app.get('/api/status', (req, res) => {

@@ -1,6 +1,8 @@
 /**
  * AI Configuration for Reply Generation
  */
+import { loadConfiguration } from '../../api/routes/config.js';
+
 export const AI_CONFIG = {
     // OpenAI Settings
     model: process.env.OPENAI_MODEL || 'gpt-3.5-turbo',
@@ -18,12 +20,20 @@ export const AI_CONFIG = {
 
     
     // Default Instructions Template
-    getDefaultInstructions(characterLimit) {
-        // Use custom instructions from environment if available
-        const customInstructions = process.env.REPLY_INSTRUCTIONS;
-        
-        if (customInstructions) {
-            return `
+    async getDefaultInstructions(characterLimit) {
+        try {
+            console.log('🔧 [AI_CONFIG] Loading instructions from JSON config...');
+            // Use custom instructions from JSON config if available
+            const jsonConfig = await loadConfiguration();
+            const customInstructions = jsonConfig.reply_instructions;
+            console.log('🔧 [AI_CONFIG] Loaded config:', {
+                has_reply_instructions: !!customInstructions,
+                reply_instructions_length: customInstructions ? customInstructions.length : 0,
+                reply_instructions_preview: customInstructions ? customInstructions.substring(0, 50) + '...' : 'N/A'
+            });
+            
+            if (customInstructions) {
+                const finalInstructions = `
 ${customInstructions}
 
 CRITICAL: Your response must be EXACTLY under ${characterLimit} characters. Count characters carefully!
@@ -32,10 +42,17 @@ Guidelines:
 - MUST be under ${characterLimit} characters (this is CRITICAL)
 - Write complete sentences, not truncated ones
 - Sound natural and human-like
-            `.trim();
+                `.trim();
+                
+                console.log('✅ [AI_CONFIG] Using JSON config instructions');
+                return finalInstructions;
+            }
+        } catch (error) {
+            console.error('⚠️ [AI_CONFIG] Failed to load JSON config for reply instructions:', error.message);
         }
         
         // Fallback to default instructions
+        console.log('🔄 [AI_CONFIG] Using fallback instructions');
         return `
 You are a helpful and engaging Twitter user. Reply in human like terms. Write your response in full string. Generate a thoughtful, relevant reply to the given tweet.
 

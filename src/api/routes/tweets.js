@@ -133,6 +133,61 @@ router.get('/skipped', async (req, res) => {
 });
 
 /**
+ * GET /api/tweets/failed
+ * Get failed tweets
+ */
+router.get('/failed', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+
+        const result = await req.db.getTweetsByStatus('failed', page, limit);
+        
+        res.json({
+            success: true,
+            data: {
+                tweets: result.tweets,
+                pagination: result.pagination
+            }
+        });
+
+    } catch (error) {
+        console.error('Error fetching failed tweets:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch failed tweets'
+        });
+    }
+});
+
+/**
+ * PUT /api/tweets/:id/reset
+ * Reset tweet status back to pending
+ */
+router.put('/:id/reset', async (req, res) => {
+    try {
+        const tweetId = req.params.id;
+
+        const updated = await req.db.updateTweetStatus([tweetId], 'pending');
+        
+        res.json({
+            success: true,
+            data: {
+                updated_count: updated,
+                tweet_id: tweetId
+            }
+        });
+
+    } catch (error) {
+        console.error('Error resetting tweet status:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to reset tweet status'
+        });
+    }
+});
+
+/**
  * PUT /api/tweets/select
  * Mark tweets as selected for reply
  */
@@ -316,6 +371,7 @@ router.get('/stats', async (req, res) => {
                 pending: stats.pending,
                 replied: stats.replied,
                 skipped: stats.skipped,
+                failed: stats.failed,
                 total: stats.total,
                 videos: stats.videos,
                 text_only: stats.total - stats.videos
@@ -583,10 +639,10 @@ router.delete('/:id/manual-reply', async (req, res) => {
             });
         }
 
-        // Clear manual reply from database
+        // Clear manual reply from database and reset status to pending
         await new Promise((resolve, reject) => {
             req.db.db.run(
-                'UPDATE tweets SET manual_reply = NULL, manual_reply_updated_at = NULL WHERE tweet_id = ?',
+                'UPDATE tweets SET manual_reply = NULL, manual_reply_updated_at = NULL, status = "pending" WHERE tweet_id = ?',
                 [tweet.tweet_id],
                 (err) => {
                     if (err) reject(err);
@@ -638,10 +694,10 @@ router.delete('/:id/preview', async (req, res) => {
             });
         }
 
-        // Clear generated preview from database
+        // Clear generated preview from database and reset status to pending
         await new Promise((resolve, reject) => {
             req.db.db.run(
-                'UPDATE tweets SET generated_preview = NULL, preview_generated_at = NULL WHERE tweet_id = ?',
+                'UPDATE tweets SET generated_preview = NULL, preview_generated_at = NULL, status = "pending" WHERE tweet_id = ?',
                 [tweet.tweet_id],
                 (err) => {
                     if (err) reject(err);

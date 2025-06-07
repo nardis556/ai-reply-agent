@@ -10,6 +10,7 @@ const state = {
     pendingReplies: [],
     historyTweets: [],
     skippedTweets: [],
+    failedTweets: [],
     stats: {},
     filters: {
         type: 'all',
@@ -34,7 +35,9 @@ async function initApp() {
         loadPendingReplies(),
         loadHistory(),
         loadSkipped(),
-        loadScraperStatus()
+        loadFailed(),
+        loadScraperStatus(),
+        loadConfig()
     ]);
     
     // Set up periodic status updates
@@ -76,6 +79,13 @@ function setupAutoRefresh() {
     setInterval(async () => {
         if (state.currentTab === 'skipped') {
             await loadSkipped();
+        }
+    }, 5000);
+    
+    // Auto-refresh failed tweets every 60 seconds
+    setInterval(async () => {
+        if (state.currentTab === 'failed') {
+            await loadFailed();
         }
     }, 5000);
     
@@ -129,6 +139,7 @@ async function loadStats() {
 function updateStatsDisplay(stats) {
     document.getElementById('stat-pending').textContent = stats.pending || 0;
     document.getElementById('stat-replied').textContent = stats.replied || 0;
+    document.getElementById('stat-failed').textContent = stats.failed || 0;
     document.getElementById('stat-videos').textContent = stats.videos || 0;
     document.getElementById('stat-total').textContent = stats.total || 0;
 }
@@ -204,6 +215,20 @@ async function loadSkipped() {
     } catch (error) {
         document.getElementById('skipped-tweets-container').innerHTML = 
             '<div class="error">Failed to load skipped tweets</div>';
+    }
+}
+
+/**
+ * Load failed tweets
+ */
+async function loadFailed() {
+    try {
+        const response = await apiRequest('/tweets/failed');
+        state.failedTweets = response.data?.tweets || [];
+        renderFailedTweets();
+    } catch (error) {
+        document.getElementById('failed-tweets-container').innerHTML = 
+            '<div class="error">Failed to load failed tweets</div>';
     }
 }
 
@@ -637,6 +662,55 @@ function renderSkippedTweets() {
                         <td class="tweet-text-cell">${escapeHtml(tweet.tweet_text)}</td>
                         <td class="tweet-actions-cell">
                             <a href="${tweet.tweet_url}" target="_blank" class="btn btn-primary">🔗 View</a>
+                            <button onclick="moveSkippedBackToQueue('${tweet.id}')" class="btn-small" style="background: #28a745; color: white; margin-left: 5px;">↩️ Back to Queue</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+}
+
+/**
+ * Render failed tweets
+ */
+function renderFailedTweets() {
+    const container = document.getElementById('failed-tweets-container');
+    const tweets = state.failedTweets;
+
+    if (tweets.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <h3>❌ No failed tweets</h3>
+                <p>Tweets that failed to get replies will appear here.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = `
+        <table class="tweets-table">
+            <thead>
+                <tr>
+                    <th width="120">Username</th>
+                    <th width="120">Failed</th>
+                    <th width="80">Type</th>
+                    <th>Tweet Text</th>
+                    <th width="100">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tweets.map(tweet => `
+                    <tr>
+                        <td>@${tweet.username}</td>
+                        <td>${formatDate(tweet.reviewed_at)}</td>
+                        <td>
+                            ${tweet.video ? '<span class="badge badge-video">📹 VIDEO</span>' : '<span class="badge badge-text">📝 TEXT</span>'}
+                        </td>
+                        <td class="tweet-text-cell">${escapeHtml(tweet.tweet_text)}</td>
+                        <td class="tweet-actions-cell">
+                            <a href="${tweet.tweet_url}" target="_blank" class="btn btn-primary">🔗 View</a>
+                            <button onclick="moveFailedBackToQueue('${tweet.id}')" class="btn-small" style="background: #28a745; color: white; margin-left: 5px;">↩️ Back to Queue</button>
                         </td>
                     </tr>
                 `).join('')}
@@ -990,6 +1064,58 @@ async function moveTweetBackToQueue(tweetId) {
 }
 
 /**
+ * Move skipped tweet back to pending queue
+ */
+async function moveSkippedBackToQueue(tweetId) {
+    if (!confirm('Move this tweet back to the review queue? It will be available for selection again.')) {
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/tweets/${tweetId}/reset`, {
+            method: 'PUT'
+        });
+
+        if (response.success) {
+            showSuccess('✅ Tweet moved back to review queue!');
+            
+            // Refresh relevant tabs to show updated state
+            await Promise.all([loadStats(), loadPendingTweets(), loadSkipped()]);
+        } else {
+            showError('Failed to move tweet back to queue');
+        }
+    } catch (error) {
+        showError('Failed to move tweet back to queue. Please try again.');
+    }
+}
+
+/**
+ * Move a failed tweet back to the pending queue
+ */
+async function moveFailedBackToQueue(tweetId) {
+    if (!confirm('Move this failed tweet back to the review queue? It will be available for selection again.')) {
+        return;
+    }
+
+    try {
+        const response = await apiRequest(`/tweets/${tweetId}/reset`, {
+            method: 'PUT'
+        });
+
+        if (response.success) {
+            showSuccess('✅ Failed tweet moved back to review queue!');
+            
+            // Refresh relevant tabs to show updated state
+            await Promise.all([loadStats(), loadPendingTweets(), loadFailed()]);
+        } else {
+            showError('Failed to move tweet back to queue');
+        }
+    } catch (error) {
+        showError('Failed to move tweet back to queue. Please try again.');
+    }
+}
+
+/**
  * Generate previews for all selected tweets
  */
 async function generatePreviewsForSelected() {
@@ -1093,6 +1219,9 @@ function showTab(tabName) {
         case 'skipped':
             refreshSkipped();
             break;
+        case 'failed':
+            refreshFailed();
+            break;
     }
 }
 
@@ -1128,6 +1257,9 @@ function applySorting() {
         case 'skipped':
             renderSkippedTweets();
             break;
+        case 'failed':
+            renderFailedTweets();
+            break;
     }
 }
 
@@ -1152,11 +1284,20 @@ async function loadScraperStatus() {
  * Trigger replies for selected tweets
  */
 async function triggerReplies() {
+    const btn = document.getElementById('send-replies-btn');
+    
+    // Disable button (grey it out)
+    btn.disabled = true;
+    btn.innerHTML = 'Sending Replies...';
+    
     try {
         const response = await apiRequest('/reply/refresh', { method: 'POST' });
         
         if (response.success) {
             showSuccess('Reply processing triggered! Selected tweets will be processed.');
+            
+            // Update button to show success briefly
+            btn.innerHTML = '✅ Replies Sent!';
             
             // Refresh data after a delay
             setTimeout(async () => {
@@ -1168,7 +1309,28 @@ async function triggerReplies() {
     } catch (error) {
         console.error('Failed to trigger replies:', error);
         showError('Failed to trigger reply processing. Please try again.');
+        
+        // Reset button immediately on error
+        btn.disabled = false;
+        btn.innerHTML = '📤 Send Replies';
+        return;
     }
+    
+    // Start countdown timer
+    let remainingSeconds = 15;
+    const countdownInterval = setInterval(() => {
+        remainingSeconds--;
+        
+        if (remainingSeconds <= 0) {
+            // Re-enable button after countdown
+            clearInterval(countdownInterval);
+            btn.disabled = false;
+            btn.innerHTML = '📤 Send Replies';
+        } else {
+            // Show countdown
+            btn.innerHTML = `Wait ${remainingSeconds}s`;
+        }
+    }, 1000);
 }
 
 /**
@@ -1372,6 +1534,11 @@ async function refreshSkipped() {
     showSuccess('Skipped tweets refreshed');
 }
 
+async function refreshFailed() {
+    await loadFailed();
+    showSuccess('Failed tweets refreshed');
+}
+
 /**
  * Utility functions
  */
@@ -1407,6 +1574,69 @@ function showSuccess(message) {
     console.log(message);
     // You could add a toast notification system here
     // For now, just log to console
+}
+
+/**
+ * Load bot configuration
+ */
+async function loadConfig() {
+    try {
+        const response = await apiRequest('/config');
+        
+        if (response.success) {
+            const config = response.data;
+            document.getElementById('search-keyword').value = config.search_keyword || '';
+            document.getElementById('reply-instructions').value = config.reply_instructions || '';
+            showSuccess('Configuration loaded successfully!');
+        } else {
+            showError('Failed to load configuration');
+        }
+    } catch (error) {
+        console.error('Error loading configuration:', error);
+        showError('Failed to load configuration. Please try again.');
+    }
+}
+
+/**
+ * Save bot configuration
+ */
+async function saveConfig() {
+    const searchKeyword = document.getElementById('search-keyword').value.trim();
+    const replyInstructions = document.getElementById('reply-instructions').value.trim();
+    
+    if (!searchKeyword) {
+        showError('Search keyword is required');
+        return;
+    }
+    
+    if (!replyInstructions) {
+        showError('Reply instructions are required');
+        return;
+    }
+    
+    if (replyInstructions.length < 10) {
+        showError('Reply instructions must be at least 10 characters long');
+        return;
+    }
+    
+    try {
+        const response = await apiRequest('/config', {
+            method: 'PUT',
+            body: JSON.stringify({
+                search_keyword: searchKeyword,
+                reply_instructions: replyInstructions
+            })
+        });
+        
+        if (response.success) {
+            showSuccess('Configuration saved successfully! The bot will use these settings for future scraping and replies.');
+        } else {
+            showError(response.error || 'Failed to save configuration');
+        }
+    } catch (error) {
+        console.error('Error saving configuration:', error);
+        showError('Failed to save configuration. Please try again.');
+    }
 }
 
 
