@@ -1,13 +1,13 @@
 {
   "status": "completed",
   "message": "Reply processing completed",
-  "timestamp": "2025-06-07T15:43:11.858Z",
+  "timestamp": "2025-06-10T15:41:47.543Z",
   "mode": "trigger-based",
   "lastRunResult": {
     "processed": 1,
     "successful": 1,
     "failed": 0,
-    "duration": 33,
-    "timestamp": "2025-06-07T15:43:11.858Z"
+    "duration": 34,
+    "timestamp": "2025-06-10T15:41:47.543Z"
   }
 }
